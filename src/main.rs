@@ -75,15 +75,21 @@ async fn main() -> Result<()> {
         image.width(),
         image.height()
     );
-    let mut image = image.resize_to_fill(width, height, image::imageops::FilterType::Nearest);
+    let image = image.resize_to_fill(width, height, image::imageops::FilterType::Nearest);
+    let image = Arc::new(image);
     println!("♥ image resized size: {}×{}", image.width(), image.height());
-    let mut chunks = create_new_chunks(&mut image, args.alpha_cutoff, 10).await?;
+    let mut chunks = create_new_chunks(image.clone(), args.alpha_cutoff, 10).await?;
     let mut pixel_count = 0;
     let image_size: usize = (image.width() * image.height()).try_into()?;
     for chunk in &chunks {
         pixel_count += chunk.len();
     }
-    println!("♥ pixels that will be flood: {} of {} ({}%)", pixel_count, image_size, image_size / pixel_count);
+    println!(
+        "♥ pixels that will be flood: {} of {} ({}%)",
+        pixel_count,
+        image_size,
+        image_size / pixel_count
+    );
 
     // setup streams
     let mut sharable_streams: Vec<Arc<Mutex<TcpStream>>> = Vec::new();
@@ -97,8 +103,8 @@ async fn main() -> Result<()> {
     // flood
     println!("♥ flooding the server with hugs, kisses and a whole lot of pixels~");
     loop {
+        let new_chunks = tokio::spawn(create_new_chunks(image.clone(), args.alpha_cutoff, 10));
         let _result = tokio::join!(
-            create_new_chunks(&mut image, args.alpha_cutoff, 10),
             flood(&chunks[0], &sharable_streams[0], args.x, args.y),
             flood(&chunks[1], &sharable_streams[1], args.x, args.y),
             flood(&chunks[2], &sharable_streams[2], args.x, args.y),
@@ -110,24 +116,22 @@ async fn main() -> Result<()> {
             flood(&chunks[8], &sharable_streams[8], args.x, args.y),
             flood(&chunks[9], &sharable_streams[9], args.x, args.y),
         );
-        if _result.0.is_ok() {
-            chunks = _result.0.unwrap();
-        }
+        chunks = new_chunks.await??;
     }
 }
 
 async fn create_new_chunks(
-    image: &mut DynamicImage,
+    image: Arc<DynamicImage>,
     alpha_cutoff: u8,
-    amount: usize
+    amount: usize,
 ) -> Result<Vec<Vec<(u32, u32, Rgba<u8>)>>> {
     let mut pixels: Vec<(u32, u32, Rgba<u8>)> = Vec::new();
+    let mut rng = rand::rng();
     for p in image.pixels() {
         if p.2[3] >= alpha_cutoff {
             pixels.push(p);
         }
     }
-    let mut rng = rand::rng();
     pixels.shuffle(&mut rng);
     let mut chunks: Vec<Vec<(u32, u32, Rgba<u8>)>> = Vec::new();
     for chunk in pixels.chunks(pixels.len() / amount) {
