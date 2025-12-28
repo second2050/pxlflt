@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, thread::{sleep, sleep_ms}, time::Duration};
 
 use anyhow::Result;
 use clap::Parser;
@@ -57,6 +57,9 @@ async fn main() -> Result<()> {
     let mut height: u32 = height_str.trim().parse().unwrap();
     println!("♥ display size: {}×{}", width, height);
     writer.shutdown().await?;
+
+    // zZzZzZ
+    sleep(Duration::new(2, 500));
 
     // apply user image size if set
     if args.w != 0 {
